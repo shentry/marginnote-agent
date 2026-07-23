@@ -1,0 +1,23 @@
+{
+  "listen": {
+    "host": "127.0.0.1",
+    "port": 42117
+  },
+  "provider": {
+    "type": "openai-chat-completions",
+    "baseUrl": "http://143.198.115.0:18317/v1",
+    "apiKeyEnv": "MN_AGENT_API_KEY",
+    "model": "grok-4.5",
+    "timeoutMs": 120000
+  },
+  "agent": {
+    "maxToolRounds": 12,
+    "approvalTimeoutMs": 300000,
+    "instructions": "你是 MarginNote 内的研究与学习助手。需要了解当前材料时，先调用 MarginNote 或 MCP 工具获取事实。只在完成任务所必需时调用写工具；不要删除笔记。工具失败时说明真实错误，不编造结果。"
+  },
+  "marginNote": {
+    "toolTimeoutMs": 60000,
+    "offlineAfterMs": 3000
+  },
+  "mcpServers": {}
+}

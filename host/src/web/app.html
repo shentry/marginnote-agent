@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>MarginNote Agent</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <main class="shell">
+      <header class="topbar">
+        <div>
+          <h1>MarginNote Agent</h1>
+          <p id="statusText">正在连接 Host…</p>
+        </div>
+        <span id="statusDot" class="status-dot"></span>
+      </header>
+
+      <section id="messages" class="messages" aria-live="polite"></section>
+
+      <form id="composer" class="composer">
+        <textarea
+          id="messageInput"
+          rows="3"
+          placeholder="询问当前文档、搜索笔记，或让 Agent 调用 MCP…"
+          required
+        ></textarea>
+        <button id="sendButton" type="submit">发送</button>
+      </form>
+    </main>
+    <script type="module" src="/app.js"></script>
+  </body>
+</html>

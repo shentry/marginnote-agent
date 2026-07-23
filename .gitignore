@@ -1,0 +1,6 @@
+config.json
+dist/
+.build/
+addon/icon.png
+*.log
+.DS_Store

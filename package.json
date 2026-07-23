@@ -1,0 +1,17 @@
+{
+  "name": "marginnote-agent",
+  "version": "0.1.10",
+  "private": true,
+  "type": "module",
+  "description": "A macOS MarginNote agent host with MCP and native MarginNote tools.",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "start": "node host/src/main.mjs",
+    "test": "node --test host/test/*.test.mjs",
+    "build:addon": "node scripts/build-addon.mjs",
+    "verify:addon": "node scripts/verify-addon.mjs",
+    "verify": "npm test && npm run build:addon && npm run verify:addon"
+  }
+}
