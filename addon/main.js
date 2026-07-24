@@ -5,24 +5,114 @@ JSB.newAddon = function (mainPath) {
   JSB.require("bridge");
   JSB.require("AgentPanelController");
 
+  function nativePanelHost(study) {
+    try {
+      var controller = study.extensionPanelController;
+      if (!controller || !controller.view || typeof study.toggleExtensionPanel !== "function") {
+        return null;
+      }
+      return controller;
+    } catch (error) {
+      return null;
+    }
+  }
+
+  function nativePanelIsVisible(controller) {
+    if (!controller || !controller.view) return false;
+    var view = controller.view;
+    return Boolean(
+      view.window &&
+        !view.hidden &&
+        Number(view.bounds.width) > 1 &&
+        Number(view.bounds.height) > 1,
+    );
+  }
+
+  function observePanelHost(addon) {
+    var visible = nativePanelIsVisible(addon.panelHostController);
+    if (addon.panelHostWasVisible && !visible) addon.panelOpenedHost = false;
+    addon.panelHostWasVisible = visible;
+    return visible;
+  }
+
+  function acquireNativePanelHost(study) {
+    var controller = nativePanelHost(study);
+    var openedHost = false;
+    if (!nativePanelIsVisible(controller)) {
+      study.toggleExtensionPanel();
+      openedHost = true;
+      controller = nativePanelHost(study);
+    }
+    if (!controller) throw new Error("MarginNote 原生扩展侧栏不可用");
+    return { controller: controller, openedHost: openedHost };
+  }
+
   function layoutPanel(addon) {
-    var study = Application.sharedInstance().studyController(addon.window);
-    if (!study) return;
-    var bounds = study.view.bounds;
-    var width = Math.min(520, Math.max(360, bounds.width * 0.42));
+    if (!addon.panelController || !addon.panelHostController) return;
+    observePanelHost(addon);
+    if (addon.panelController.view.superview !== addon.panelHostController.view) return;
+    var bounds = addon.panelHostController.view.bounds;
     addon.panelController.view.frame = {
-      x: bounds.width - width - 16,
-      y: 16,
-      width: width,
-      height: Math.max(420, bounds.height - 32),
+      x: Number(bounds.x) || 0,
+      y: Number(bounds.y) || 0,
+      width: Math.max(0, Number(bounds.width) || 0),
+      height: Math.max(0, Number(bounds.height) || 0),
     };
+  }
+
+  function detachAgentPanel(addon) {
+    var shouldCloseHost = Boolean(
+      addon.panelOpenedHost &&
+      addon.panelStudyController &&
+      observePanelHost(addon)
+    );
+    if (addon.panelController && addon.panelController.view.superview) {
+      addon.panelController.view.removeFromSuperview();
+    }
+    if (shouldCloseHost) addon.panelStudyController.toggleExtensionPanel();
+    addon.panelVisible = false;
+    addon.panelOpenedHost = false;
+    addon.panelHostWasVisible = false;
+    addon.panelStudyController = null;
+    addon.panelHostController = null;
+  }
+
+  function agentPanelIsVisible(addon) {
+    return Boolean(
+      addon.panelVisible &&
+        addon.panelController &&
+        addon.panelHostController &&
+        addon.panelController.view.superview === addon.panelHostController.view &&
+        observePanelHost(addon),
+    );
   }
 
   function showAgentPanel(addon) {
     var study = Application.sharedInstance().studyController(addon.window);
     if (!study || !addon.panelController) return;
-    if (!addon.panelController.view.superview) study.view.addSubview(addon.panelController.view);
+    var nativePanel = acquireNativePanelHost(study);
+    var hostController = nativePanel.controller;
+
+    if (
+      addon.panelController.view.superview &&
+      addon.panelController.view.superview !== hostController.view
+    ) {
+      detachAgentPanel(addon);
+    }
+
+    addon.panelStudyController = study;
+    addon.panelHostController = hostController;
+    addon.panelOpenedHost = nativePanel.openedHost;
+    addon.panelHostWasVisible = nativePanelIsVisible(hostController);
+    addon.panelVisible = true;
+    addon.panelController.view.autoresizingMask = 1 << 1 | 1 << 4;
+    if (addon.panelController.view.superview !== hostController.view) {
+      hostController.view.addSubview(addon.panelController.view);
+    }
     layoutPanel(addon);
+    NSTimer.scheduledTimerWithTimeInterval(0.05, false, function () {
+      layoutPanel(addon);
+    });
     NSUserDefaults.standardUserDefaults().setBoolForKey(
       true,
       "marginnote_agent_panel_visible",
@@ -32,9 +122,7 @@ JSB.newAddon = function (mainPath) {
 
   function hideAgentPanel(addon) {
     var study = Application.sharedInstance().studyController(addon.window);
-    if (addon.panelController && addon.panelController.view.window) {
-      addon.panelController.view.removeFromSuperview();
-    }
+    detachAgentPanel(addon);
     NSUserDefaults.standardUserDefaults().setBoolForKey(
       false,
       "marginnote_agent_panel_visible",
@@ -55,12 +143,15 @@ JSB.newAddon = function (mainPath) {
       },
 
       sceneDidDisconnect: function () {
+        detachAgentPanel(self);
+        self.panelController = null;
         MNAgentBridge.stop();
       },
 
       notebookWillOpen: function () {
         var addon = self;
         NSTimer.scheduledTimerWithTimeInterval(0.2, false, function () {
+          if (!addon.panelController || !addon.window) return;
           var visible = NSUserDefaults.standardUserDefaults().boolForKey(
             "marginnote_agent_panel_visible",
           );
@@ -78,13 +169,13 @@ JSB.newAddon = function (mainPath) {
           image: "icon.png",
           object: self,
           selector: "toggleAgentPanel:",
-          checked: Boolean(self.panelController && self.panelController.view.window),
+          checked: agentPanelIsVisible(self),
         };
       },
 
       toggleAgentPanel: function (sender) {
         try {
-          if (self.panelController && self.panelController.view.window) hideAgentPanel(self);
+          if (agentPanelIsVisible(self)) hideAgentPanel(self);
           else showAgentPanel(self);
         } catch (error) {
           var message = String(error && error.message ? error.message : error);

@@ -30,6 +30,16 @@ var MNAgentTools = (function () {
     }
   }
 
+  function propertyValue(target, name) {
+    if (isNil(target)) return null;
+    try {
+      var value = target[name];
+      return typeof value === "function" ? value.call(target) : value;
+    } catch (error) {
+      return null;
+    }
+  }
+
   function arrayValue(value) {
     if (isNil(value)) return [];
     if (Array.isArray(value)) return value;
@@ -88,8 +98,28 @@ var MNAgentTools = (function () {
       endPage: numberValue(note.endPage),
       comments: comments,
       children: children,
-      parentNoteId: note.parentNote ? stringValue(note.parentNote.noteId) : "",
+      parentNoteId: !isNil(note.parentNote) ? stringValue(note.parentNote.noteId) : "",
     };
+  }
+
+  function serializeNoteSafely(note, includeChildren) {
+    if (isNil(note)) return null;
+    try {
+      return serializeNote(note, includeChildren);
+    } catch (error) {
+      return {
+        noteId: stringValue(note.noteId),
+        notebookId: stringValue(note.notebookId),
+        docMd5: stringValue(note.docMd5),
+        title: stringValue(note.noteTitle),
+        excerptText: stringValue(note.excerptText),
+        notesText: stringValue(note.notesText),
+        comments: [],
+        children: [],
+        parentNoteId: "",
+        truncated: true,
+      };
+    }
   }
 
   function normalizeSearchItem(item) {
@@ -130,20 +160,210 @@ var MNAgentTools = (function () {
         ? {
             docMd5: stringValue(document.docMd5),
             title: stringValue(document.docTitle),
-            pageCount: numberValue(document.pageCount),
+            pageCount: numberValue(propertyValue(document, "pageCount")),
           }
         : null,
-      focusNote: notebookController ? serializeNote(notebookController.focusNote, false) : null,
+      focusNote: notebookController ? serializeNoteSafely(notebookController.focusNote, false) : null,
       selectionText: documentController ? stringValue(documentController.selectionText) : "",
     };
   }
 
-  function getSelection(addon) {
-    var context = getContext(addon);
+  function takeText(value, state) {
+    var text = stringValue(value);
+    if (!text || state.remaining <= 0) {
+      if (text) state.truncated = true;
+      return "";
+    }
+    if (text.length <= state.remaining) {
+      state.remaining -= text.length;
+      return text;
+    }
+    var output = text.slice(0, state.remaining);
+    state.remaining = 0;
+    state.truncated = true;
+    return output;
+  }
+
+  function serializeSelectedNote(note, budget) {
+    var state = { remaining: budget, truncated: false };
+    var comments = [];
+    var rawComments = arrayValue(note.comments);
+    for (var index = 0; index < rawComments.length && state.remaining > 0; index += 1) {
+      var comment = rawComments[index];
+      if (isNil(comment)) continue;
+      comments.push({
+        type: stringValue(comment.type || comment.commentType),
+        text: takeText(comment.text || comment.noteText || comment.html, state),
+        noteId: stringValue(comment.noteId || comment.noteid),
+      });
+    }
+    if (comments.length < rawComments.length) state.truncated = true;
+    return {
+      noteId: stringValue(note.noteId),
+      notebookId: stringValue(note.notebookId),
+      docMd5: stringValue(note.docMd5),
+      title: stringValue(note.noteTitle),
+      excerptText: takeText(note.excerptText, state),
+      notesText: takeText(note.notesText, state),
+      startPage: numberValue(note.startPage),
+      endPage: numberValue(note.endPage),
+      comments: comments,
+      truncated: state.truncated,
+    };
+  }
+
+  function selectedMindMapNotes(addon, args) {
+    var study = studyController(addon);
+    var notebookController = study && study.notebookController;
+    var mindmapView = notebookController && notebookController.mindmapView;
+    var selectedViews = arrayValue(mindmapView && mindmapView.selViewLst);
+    var limit = Math.max(1, Math.min(Number(args.limit || 20), 50));
+    var maxChars = Math.max(1000, Math.min(Number(args.maxChars || 20000), 50000));
+    var budget = Math.max(500, Math.floor(maxChars / Math.max(1, Math.min(limit, selectedViews.length))));
+    var notes = [];
+    var seen = {};
+    for (var index = 0; index < selectedViews.length && notes.length < limit; index += 1) {
+      var wrapper = selectedViews[index] && selectedViews[index].note;
+      var note = wrapper && wrapper.note ? wrapper.note : wrapper;
+      if (isNil(note)) continue;
+      var noteId = stringValue(note.noteId);
+      if (!noteId || seen[noteId]) continue;
+      seen[noteId] = true;
+      notes.push(serializeSelectedNote(note, budget));
+    }
+    return {
+      selectedCount: selectedViews.length,
+      returnedCount: notes.length,
+      truncated: notes.length < selectedViews.length || notes.some(function (note) {
+        return note.truncated;
+      }),
+      notes: notes,
+    };
+  }
+
+  function getSelection(addon, args) {
+    var context;
+    try {
+      context = getContext(addon);
+    } catch (error) {
+      context = { available: false, document: null, selectionText: "" };
+    }
+    var selectedNotes = selectedMindMapNotes(addon, args);
     return {
       available: context.available,
       document: context.document,
       selectionText: context.selectionText || "",
+      pdfSelection: { text: context.selectionText || "" },
+      selectedNotes: selectedNotes,
+    };
+  }
+
+  function invokePageText(target, methodName, pageIndex) {
+    if (isNil(target)) return { supported: false, text: "" };
+    try {
+      var method = target[methodName];
+      if (typeof method !== "function") return { supported: false, text: "" };
+      return { supported: true, text: stringValue(method.call(target, pageIndex)) };
+    } catch (error) {
+      return { supported: false, text: "" };
+    }
+  }
+
+  function pageText(documentController, document, pageIndex, currentPageIndex) {
+    if (pageIndex === currentPageIndex && documentController) {
+      try {
+        if (typeof documentController.getCurrentPageText === "function") {
+          return {
+            supported: true,
+            text: stringValue(documentController.getCurrentPageText()),
+          };
+        }
+      } catch (error) {}
+    }
+    var candidates = [
+      [document, "textContentsForPageNo2"],
+      [document, "textContentsForPageNo"],
+      [document, "textForPageNo"],
+      [documentController, "textContentsForPageNo2"],
+      [documentController, "textContentsForPageNo"],
+      [documentController, "textForPageNo"],
+    ];
+    for (var index = 0; index < candidates.length; index += 1) {
+      var result = invokePageText(candidates[index][0], candidates[index][1], pageIndex);
+      if (result.supported) return result;
+    }
+    return { supported: false, text: "" };
+  }
+
+  function currentPageIndex(documentController) {
+    var names = ["currentPage", "pageNo", "pageIndex"];
+    for (var index = 0; index < names.length; index += 1) {
+      var value = numberValue(propertyValue(documentController, names[index]));
+      if (value !== null && value >= 0) return Math.floor(value);
+    }
+    return 0;
+  }
+
+  function readPdf(addon, args) {
+    var study = studyController(addon);
+    if (!study) throw new Error("No active study window");
+    var readerController = study.readerController;
+    var documentController = readerController && readerController.currentDocumentController;
+    var document = documentController && documentController.document;
+    if (!documentController || !document) throw new Error("No active PDF document");
+
+    var pageCount = numberValue(propertyValue(document, "pageCount"));
+    var currentIndex = currentPageIndex(documentController);
+    var startPage = Math.floor(Number(args.startPage || currentIndex + 1));
+    var endPage = Math.floor(Number(args.endPage || startPage));
+    var startChar = Math.max(0, Math.floor(Number(args.startChar || 0)));
+    var maxChars = Math.max(1000, Math.min(Number(args.maxChars || 20000), 50000));
+    if (startPage < 1 || endPage < startPage) throw new Error("Invalid PDF page range");
+    if (pageCount !== null && startPage > pageCount) throw new Error("PDF startPage exceeds pageCount");
+    if (pageCount !== null) endPage = Math.min(endPage, pageCount);
+
+    var lastPage = Math.min(endPage, startPage + 19);
+    var pages = [];
+    var remaining = maxChars;
+    var nextCursor = null;
+    var supported = false;
+    for (var page = startPage; page <= lastPage; page += 1) {
+      var extracted = pageText(documentController, document, page - 1, currentIndex);
+      supported = supported || extracted.supported;
+      var offset = page === startPage ? startChar : 0;
+      var available = extracted.text.slice(offset);
+      var length = Math.min(available.length, remaining);
+      pages.push({
+        page: page,
+        startChar: offset,
+        text: available.slice(0, length),
+        complete: length === available.length,
+      });
+      remaining -= length;
+      if (length < available.length) {
+        nextCursor = { page: page, charOffset: offset + length };
+        break;
+      }
+      if (remaining <= 0 && page < endPage) {
+        nextCursor = { page: page + 1, charOffset: 0 };
+        break;
+      }
+    }
+    if (!supported) throw new Error("Current MarginNote document does not expose page text");
+    if (!nextCursor && lastPage < endPage) nextCursor = { page: lastPage + 1, charOffset: 0 };
+
+    return {
+      available: true,
+      document: {
+        docMd5: stringValue(document.docMd5),
+        title: stringValue(document.docTitle),
+        pageCount: pageCount,
+        currentPage: currentIndex + 1,
+      },
+      range: { startPage: startPage, endPage: endPage },
+      pages: pages,
+      truncated: Boolean(nextCursor),
+      nextCursor: nextCursor,
     };
   }
 
@@ -266,7 +486,9 @@ var MNAgentTools = (function () {
       case "get_context":
         return getContext(addon);
       case "get_selection":
-        return getSelection(addon);
+        return getSelection(addon, args);
+      case "read_pdf":
+        return readPdf(addon, args);
       case "list_notebooks":
         return listNotebooks(args);
       case "search_notes":

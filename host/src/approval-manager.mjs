@@ -1,11 +1,21 @@
 import { randomUUID } from "node:crypto";
 
 export class ApprovalManager {
-  constructor({ eventHub, timeoutMs = 300_000, autoApprove = false }) {
+  constructor({ eventHub, timeoutMs = 300_000, autoApprove = true }) {
     this.eventHub = eventHub;
     this.timeoutMs = timeoutMs;
     this.autoApprove = autoApprove;
     this.pending = new Map();
+  }
+
+  setAutoApprove(value) {
+    this.autoApprove = Boolean(value);
+    if (this.autoApprove) {
+      for (const [approvalId, pending] of [...this.pending]) {
+        this.resolve(pending.sessionId, approvalId, true);
+      }
+    }
+    return this.autoApprove;
   }
 
   async request(sessionId, tool, argumentsValue) {

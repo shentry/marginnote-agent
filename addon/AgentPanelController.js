@@ -11,10 +11,6 @@ var AgentPanelController = JSB.defineClass(
     viewDidLoad: function () {
       var controller = self;
       controller.view.backgroundColor = UIColor.whiteColor();
-      controller.view.layer.shadowOffset = { width: 0, height: 0 };
-      controller.view.layer.shadowRadius = 12;
-      controller.view.layer.shadowOpacity = 0.22;
-      controller.view.layer.shadowColor = UIColor.blackColor();
 
       var bounds = controller.view.bounds;
       var width = bounds.width > 0 ? bounds.width : 480;
@@ -36,7 +32,12 @@ var AgentPanelController = JSB.defineClass(
     viewDidLayoutSubviews: function () {
       if (!self.webView) return;
       var bounds = self.view.bounds;
-      self.webView.frame = { x: 0, y: 0, width: bounds.width, height: bounds.height };
+      self.webView.frame = {
+        x: 0,
+        y: 0,
+        width: bounds.width,
+        height: bounds.height,
+      };
     },
 
     viewWillAppear: function () {

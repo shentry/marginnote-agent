@@ -15,7 +15,8 @@ class FakeProvider {
   }
 
   async createResponse(request) {
-    this.calls.push(structuredClone(request));
+    const { onDelta, ...serializableRequest } = request;
+    this.calls.push(structuredClone(serializableRequest));
     if (this.calls.length === 1) {
       return {
         output: [
@@ -30,7 +31,11 @@ class FakeProvider {
         ],
       };
     }
+    onDelta({ type: "reasoning", delta: "正在整理结果。" });
+    onDelta({ type: "text", delta: "已读取" });
+    onDelta({ type: "text", delta: "笔记 N1。" });
     return {
+      reasoning_text: "正在整理结果。",
       output: [
         {
           type: "message",
@@ -44,14 +49,14 @@ class FakeProvider {
 
 test("agent preserves response items, executes tools and returns the final message", async () => {
   const eventHub = new EventHub();
-  const approvals = new ApprovalManager({ eventHub, autoApprove: true });
+  const approvals = new ApprovalManager({ eventHub });
   const registry = new ToolRegistry();
   registry.register({
     name: "fixture__lookup",
     source: "test",
     description: "Lookup a fixture note",
     inputSchema: { type: "object", properties: { id: { type: "string" } } },
-    readOnly: true,
+    readOnly: false,
     execute: async ({ id }) => ({ id, title: "Fixture" }),
   });
   const provider = new FakeProvider();
@@ -63,11 +68,25 @@ test("agent preserves response items, executes tools and returns the final messa
     config: { maxToolRounds: 4, instructions: "test" },
   });
 
-  const session = engine.createSession();
+  const session = await engine.createSession();
   const output = await engine.sendMessage(session.id, "读取 N1");
   assert.equal(output, "已读取笔记 N1。");
   assert.equal(provider.calls.length, 2);
   assert.ok(provider.calls[1].input.some((item) => item.type === "reasoning"));
   assert.ok(provider.calls[1].input.some((item) => item.type === "function_call_output"));
-  assert.equal(engine.snapshot(session.id).messages.length, 2);
+  const snapshot = engine.snapshot(session.id);
+  assert.equal(snapshot.messages.length, 3);
+  assert.match(snapshot.messages[0].id, /^[0-9a-f-]{36}$/);
+  const userEvent = (eventHub.histories.get(session.id) ?? []).find(
+    (event) => event.type === "user.message",
+  );
+  assert.equal(userEvent.messageId, snapshot.messages[0].id);
+  assert.equal(snapshot.messages[1].role, "tool");
+  assert.equal(snapshot.messages[2].reasoning, "正在整理结果。");
+  assert.equal(snapshot.messages[2].content, "已读取笔记 N1。");
+  assert.equal(
+    (eventHub.histories.get(session.id) ?? []).some((event) => event.type === "approval.required"),
+    false,
+  );
+  assert.equal(engine.listSessions()[0].title, "读取 N1");
 });

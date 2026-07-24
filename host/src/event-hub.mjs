@@ -28,6 +28,10 @@ export class EventHub {
     return event;
   }
 
+  lastId(sessionId) {
+    return this.sequences.get(sessionId) ?? 0;
+  }
+
   subscribe(sessionId, response, afterId = 0) {
     const subscribers = this.subscribers.get(sessionId) ?? new Set();
     subscribers.add(response);

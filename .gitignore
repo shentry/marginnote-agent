@@ -4,3 +4,4 @@ dist/
 addon/icon.png
 *.log
 .DS_Store
+.env

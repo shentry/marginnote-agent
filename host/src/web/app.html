@@ -9,25 +9,90 @@
   <body>
     <main class="shell">
       <header class="topbar">
-        <div>
-          <h1>MarginNote Agent</h1>
-          <p id="statusText">正在连接 Host…</p>
+        <div class="topbar-main">
+          <div>
+            <h1>MarginNote Agent</h1>
+            <p id="statusText">正在连接 Host…</p>
+          </div>
+          <span id="statusDot" class="status-dot"></span>
         </div>
-        <span id="statusDot" class="status-dot"></span>
+        <div class="conversation-controls">
+          <button id="conversationButton" class="conversation-button" type="button">
+            <span id="conversationTitle">新对话</span>
+            <span aria-hidden="true">⌄</span>
+          </button>
+        </div>
       </header>
 
-      <section id="messages" class="messages" aria-live="polite"></section>
+      <div id="drawerBackdrop" class="drawer-backdrop" hidden></div>
+      <aside id="conversationDrawer" class="conversation-drawer" hidden>
+        <div class="drawer-header">
+          <strong>对话</strong>
+          <button
+            id="drawerNewConversationButton"
+            class="icon-button"
+            type="button"
+            aria-label="新建对话"
+            title="新建对话"
+          >
+            +
+          </button>
+        </div>
+        <div id="conversationList" class="conversation-list"></div>
+      </aside>
+
+      <div class="messages-wrap">
+        <section id="messages" class="messages" aria-live="polite"></section>
+        <button id="scrollBottomButton" class="scroll-bottom" type="button" hidden aria-label="回到底部">
+          ↓
+        </button>
+      </div>
 
       <form id="composer" class="composer">
+        <div id="settingsMenuContainer" class="settings-menu-container">
+          <button
+            id="settingsMenuButton"
+            class="composer-action-button"
+            type="button"
+            aria-label="对话设置"
+            aria-controls="settingsMenu"
+            aria-expanded="false"
+            title="对话设置"
+          >
+            <span aria-hidden="true">•••</span>
+          </button>
+          <div id="settingsMenu" class="settings-menu" role="menu" hidden>
+            <button
+              id="autoApproveButton"
+              class="settings-menu-item"
+              type="button"
+              role="menuitemcheckbox"
+              aria-checked="false"
+            >
+              <span>自动接受编辑</span>
+              <span class="settings-check" aria-hidden="true">✓</span>
+            </button>
+          </div>
+        </div>
         <textarea
           id="messageInput"
-          rows="3"
-          placeholder="询问当前文档、搜索笔记，或让 Agent 调用 MCP…"
+          rows="1"
           required
         ></textarea>
-        <button id="sendButton" type="submit">发送</button>
+        <button
+          id="newConversationButton"
+          class="composer-action-button"
+          type="button"
+          aria-label="新建对话"
+          title="新建对话"
+        >
+          <span aria-hidden="true">＋</span>
+        </button>
+        <button id="sendButton" class="send-button" type="submit">发送</button>
       </form>
     </main>
+    <script src="/marked.min.js"></script>
+    <script src="/purify.min.js"></script>
     <script type="module" src="/app.js"></script>
   </body>
 </html>

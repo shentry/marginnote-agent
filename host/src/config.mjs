@@ -1,4 +1,5 @@
 import { readFile } from "node:fs/promises";
+import os from "node:os";
 import path from "node:path";
 
 export const DEFAULT_CONFIG = Object.freeze({
@@ -15,9 +16,19 @@ export const DEFAULT_CONFIG = Object.freeze({
   },
   agent: {
     maxToolRounds: 12,
+    autoApprove: true,
     approvalTimeoutMs: 300_000,
     instructions:
-      "你是 MarginNote 内的研究与学习助手。需要了解当前材料时，先调用 MarginNote 或 MCP 工具获取事实。只在完成任务所必需时调用写工具；不要删除笔记。工具失败时说明真实错误，不编造结果。",
+      "你是 MarginNote 内的研究与学习助手。需要了解当前材料时，先调用 MarginNote 或 MCP 工具获取事实。用户询问当前 PDF 时调用 read_pdf，询问选中内容时调用 get_selection。只在完成任务所必需时调用写工具；不要删除笔记。工具失败时说明真实错误，不编造结果。",
+  },
+  sessions: {
+    filePath: path.join(
+      os.homedir(),
+      "Library",
+      "Application Support",
+      "MarginNote Agent",
+      "sessions.json",
+    ),
   },
   marginNote: {
     toolTimeoutMs: 60_000,
@@ -65,6 +76,9 @@ export async function loadConfig(explicitPath = process.env.MN_AGENT_CONFIG) {
   if (process.env.MN_AGENT_HOST) config.listen.host = process.env.MN_AGENT_HOST;
   if (process.env.MN_AGENT_PORT) config.listen.port = Number(process.env.MN_AGENT_PORT);
   if (process.env.MN_AGENT_MODEL) config.provider.model = process.env.MN_AGENT_MODEL;
+  if (process.env.MN_AGENT_SESSION_FILE) {
+    config.sessions.filePath = path.resolve(process.env.MN_AGENT_SESSION_FILE);
+  }
 
   if (!Number.isInteger(config.listen.port) || config.listen.port < 1 || config.listen.port > 65_535) {
     throw new Error(`Invalid listen.port: ${config.listen.port}`);

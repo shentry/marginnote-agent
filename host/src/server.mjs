@@ -11,12 +11,15 @@ import { McpManager } from "./mcp/manager.mjs";
 import { OpenAIResponsesProvider } from "./openai-responses-provider.mjs";
 import { OpenAIChatCompletionsProvider } from "./openai-chat-completions-provider.mjs";
 import { AgentEngine } from "./agent-engine.mjs";
+import { FileSessionStore, MemorySessionStore } from "./session-store.mjs";
 
 const WEB_ROOT = path.join(path.dirname(fileURLToPath(import.meta.url)), "web");
 const STATIC_FILES = new Map([
   ["/", ["app.html", "text/html; charset=utf-8"]],
   ["/app.js", ["app.js", "text/javascript; charset=utf-8"]],
   ["/styles.css", ["styles.css", "text/css; charset=utf-8"]],
+  ["/marked.min.js", ["marked.min.js", "text/javascript; charset=utf-8"]],
+  ["/purify.min.js", ["purify.min.js", "text/javascript; charset=utf-8"]],
 ]);
 
 function sendJson(response, statusCode, payload) {
@@ -67,7 +70,12 @@ export function createProvider(config) {
   }
 }
 
-export async function createHost({ config, provider: providerOverride, autoApprove = false }) {
+export async function createHost({
+  config,
+  provider: providerOverride,
+  sessionStore: sessionStoreOverride,
+  autoApprove,
+}) {
   const eventHub = new EventHub();
   const bridge = new MarginNoteBridge(config.marginNote);
   const registry = new ToolRegistry();
@@ -77,10 +85,16 @@ export async function createHost({ config, provider: providerOverride, autoAppro
   await mcpManager.connectAll(registry);
 
   const provider = providerOverride ?? createProvider(config.provider);
+  const sessionStore =
+    sessionStoreOverride ??
+    (config.sessions?.filePath
+      ? new FileSessionStore({ filePath: config.sessions.filePath })
+      : new MemorySessionStore());
+  const restoredSessions = await sessionStore.load();
   const approvals = new ApprovalManager({
     eventHub,
     timeoutMs: config.agent.approvalTimeoutMs,
-    autoApprove,
+    autoApprove: autoApprove ?? config.agent.autoApprove,
   });
   const agent = new AgentEngine({
     provider,
@@ -88,6 +102,8 @@ export async function createHost({ config, provider: providerOverride, autoAppro
     eventHub,
     approvals,
     config: config.agent,
+    sessionStore,
+    sessions: restoredSessions,
   });
 
   const server = http.createServer(async (request, response) => {
@@ -127,6 +143,21 @@ export async function createHost({ config, provider: providerOverride, autoAppro
         return;
       }
 
+      if (request.method === "GET" && url.pathname === "/api/settings") {
+        sendJson(response, 200, { autoApprove: approvals.autoApprove });
+        return;
+      }
+
+      if (request.method === "PATCH" && url.pathname === "/api/settings") {
+        const body = await readJson(request);
+        if (typeof body.autoApprove !== "boolean") {
+          sendError(response, 400, "autoApprove must be a boolean");
+          return;
+        }
+        sendJson(response, 200, { autoApprove: approvals.setAutoApprove(body.autoApprove) });
+        return;
+      }
+
       if (request.method === "GET" && url.pathname === "/api/tools") {
         sendJson(
           response,
@@ -143,8 +174,13 @@ export async function createHost({ config, provider: providerOverride, autoAppro
         return;
       }
 
+      if (request.method === "GET" && url.pathname === "/api/sessions") {
+        sendJson(response, 200, { sessions: agent.listSessions() });
+        return;
+      }
+
       if (request.method === "POST" && url.pathname === "/api/sessions") {
-        const session = agent.createSession();
+        const session = await agent.createSession();
         sendJson(response, 201, session);
         return;
       }
@@ -248,6 +284,7 @@ export async function createHost({ config, provider: providerOverride, autoAppro
     registry,
     mcpManager,
     provider,
+    sessionStore,
     async listen() {
       await new Promise((resolve, reject) => {
         server.once("error", reject);
@@ -259,6 +296,7 @@ export async function createHost({ config, provider: providerOverride, autoAppro
       return server.address();
     },
     async close() {
+      await sessionStore.flush();
       await mcpManager.close();
       if (!server.listening) return;
       await new Promise((resolve, reject) => server.close((error) => (error ? reject(error) : resolve())));

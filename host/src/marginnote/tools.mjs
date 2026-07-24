@@ -14,8 +14,23 @@ export const MARGINNOTE_TOOL_DEFINITIONS = [
   },
   {
     key: "get_selection",
-    description: "读取当前文档选中的文本以及当前文档标识。",
-    inputSchema: objectSchema({}),
+    description: "读取当前 PDF 文本选区，以及脑图中单选或多选的 MarginNote 笔记卡片。",
+    inputSchema: objectSchema({
+      limit: { type: "integer", minimum: 1, maximum: 50 },
+      maxChars: { type: "integer", minimum: 1000, maximum: 50000 },
+    }),
+    readOnly: true,
+  },
+  {
+    key: "read_pdf",
+    description:
+      "按页读取当前 PDF 的文本。页码为 1-based；不传页码时读取当前页；用 nextCursor 继续被截断的内容。",
+    inputSchema: objectSchema({
+      startPage: { type: "integer", minimum: 1 },
+      endPage: { type: "integer", minimum: 1 },
+      startChar: { type: "integer", minimum: 0 },
+      maxChars: { type: "integer", minimum: 1000, maximum: 50000 },
+    }),
     readOnly: true,
   },
   {

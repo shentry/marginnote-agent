@@ -4,12 +4,15 @@ MarginNote 4 macOS 插件与本地 Agent Host。Host 可以连接多个 stdio MC
 
 ## 当前能力
 
-- MarginNote 内嵌聊天面板。
+- MarginNote 右侧停靠聊天侧栏，显示时同步缩窄文档区域。
+- 本地持久化多对话，可在面板顶部新建和切换，Host 重启后仍保留。
+- Chat Completions 文本流式输出；服务端返回思考字段时显示可折叠的思考过程。
 - OpenAI 兼容的 Chat Completions Agent 循环，默认请求 `/v1/chat/completions`；模型可在配置或环境变量中覆盖。
 - 多个 stdio MCP Server 的 `initialize`、`tools/list` 与 `tools/call`。
 - MarginNote 工具：
   - `get_context`
   - `get_selection`
+  - `read_pdf`
   - `list_notebooks`
   - `search_notes`
   - `get_note`
@@ -17,7 +20,7 @@ MarginNote 4 macOS 插件与本地 Agent Host。Host 可以连接多个 stdio MC
   - `update_note`
   - `append_comment`
   - `focus_note`
-- 数据写工具在聊天面板中逐次审批，并通过 MarginNote `UndoManager` 执行。
+- 工具调用默认自动执行，不弹出审批；MarginNote 写操作仍通过 `UndoManager` 执行。
 
 ## 运行
 
@@ -32,6 +35,10 @@ npm start
 ```
 
 Host 默认监听 `http://127.0.0.1:42117`，模型服务使用 `http://143.198.115.0:18317/v1/chat/completions`。API Key 只存在于 Host 进程环境中，不会进入配置文件、`.mnaddon` 或 WebView。
+
+`agent.autoApprove` 默认为 `true`，所有工具调用会直接执行。设为 `false` 可恢复聊天面板中的逐次审批。
+
+对话默认保存在 `~/Library/Application Support/MarginNote Agent/sessions.json`，可用 `MN_AGENT_SESSION_FILE` 覆盖路径。文件权限为仅当前用户可读写；其中包含聊天内容和 Agent 已读取的工具上下文，不包含 API Key。
 
 ## 配置 MCP
 
@@ -83,6 +90,7 @@ scripts/     插件打包与校验
 ## 当前边界
 
 - 仅支持 MarginNote 4 macOS。
-- 模型响应暂不做逐 token 流式展示；工具状态和最终消息通过 SSE 实时更新。
+- 思考内容只显示兼容接口实际返回的 `reasoning_content`、`reasoning` 或 `thinking`，接口不返回时不显示。
+- PDF 工具按页读取文本层或 MarginNote 已缓存的 OCR 文本，不主动执行新的 OCR。
 - MCP 暂不支持 Streamable HTTP、OAuth、resources、prompts、sampling 和 elicitation。
 - 插件没有删除笔记工具。
