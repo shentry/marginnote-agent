@@ -47,6 +47,37 @@ class FakeProvider {
   }
 }
 
+class ContextCompactingProvider {
+  constructor() {
+    this.calls = [];
+  }
+
+  async createResponse(request) {
+    const { onDelta, ...serializableRequest } = request;
+    this.calls.push(structuredClone(serializableRequest));
+    if (request.instructions.includes("对话上下文压缩器")) {
+      return {
+        output: [
+          {
+            type: "message",
+            role: "assistant",
+            content: [{ type: "output_text", text: "此前已完成资料整理，保留最新问题继续处理。" }],
+          },
+        ],
+      };
+    }
+    return {
+      output: [
+        {
+          type: "message",
+          role: "assistant",
+          content: [{ type: "output_text", text: "继续处理。" }],
+        },
+      ],
+    };
+  }
+}
+
 test("agent preserves response items, executes tools and returns the final message", async () => {
   const eventHub = new EventHub();
   const approvals = new ApprovalManager({ eventHub });
@@ -89,4 +120,48 @@ test("agent preserves response items, executes tools and returns the final messa
     false,
   );
   assert.equal(engine.listSessions()[0].title, "读取 N1");
+});
+
+test("agent compacts completed history at the configured context window limit", async () => {
+  const provider = new ContextCompactingProvider();
+  const eventHub = new EventHub();
+  const engine = new AgentEngine({
+    provider,
+    registry: new ToolRegistry(),
+    eventHub,
+    approvals: new ApprovalManager({ eventHub }),
+    config: { contextWindowTokens: 2_000, instructions: "test" },
+    sessions: [
+      {
+        id: "context-session",
+        title: "已有对话",
+        input: [
+          { role: "user", content: "第一轮问题。".repeat(220) },
+          {
+            type: "message",
+            role: "assistant",
+            content: [{ type: "output_text", text: "第一轮回答。".repeat(220) }],
+          },
+          { role: "user", content: "第二轮问题。".repeat(220) },
+        ],
+        messages: [],
+        running: false,
+        createdAt: "2026-01-01T00:00:00.000Z",
+        updatedAt: "2026-01-01T00:00:00.000Z",
+      },
+    ],
+  });
+
+  await engine.sendMessage("context-session", "继续处理");
+
+  const snapshot = engine.snapshot("context-session");
+  assert.equal(snapshot.contextWindow.limitTokens, 2_000);
+  assert.ok(snapshot.contextWindow.compactionCount >= 1);
+  assert.ok(snapshot.contextWindow.usedTokens < snapshot.contextWindow.limitTokens);
+
+  const compaction = provider.calls.find((call) => call.instructions.includes("对话上下文压缩器"));
+  assert.ok(compaction);
+  const request = provider.calls.find((call) => !call.instructions.includes("对话上下文压缩器"));
+  assert.match(request.instructions, /此前已完成资料整理/);
+  assert.ok(request.input.some((item) => item.role === "user" && item.content === "继续处理"));
 });

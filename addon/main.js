@@ -87,6 +87,38 @@ JSB.newAddon = function (mainPath) {
     );
   }
 
+  function scheduleHostReconnect(addon, delay) {
+    NSTimer.scheduledTimerWithTimeInterval(delay, false, function () {
+      if (!agentPanelIsVisible(addon)) return;
+      if (typeof addon.panelController.ensureHostLoaded === "function") {
+        addon.panelController.ensureHostLoaded();
+      }
+    });
+  }
+
+  function restoreVisiblePanel(addon) {
+    if (!addon.panelController || !addon.window) return;
+    var visible = NSUserDefaults.standardUserDefaults().boolForKey(
+      "marginnote_agent_panel_visible",
+    );
+    if (!visible || agentPanelIsVisible(addon)) return;
+    try {
+      showAgentPanel(addon);
+    } catch (error) {
+      var message = String(error && error.message ? error.message : error);
+      NSUserDefaults.standardUserDefaults().setObjectForKey(
+        message,
+        "marginnote_agent_last_panel_error",
+      );
+    }
+  }
+
+  function schedulePanelRestore(addon, delay) {
+    NSTimer.scheduledTimerWithTimeInterval(delay, false, function () {
+      restoreVisiblePanel(addon);
+    });
+  }
+
   function showAgentPanel(addon) {
     var study = Application.sharedInstance().studyController(addon.window);
     if (!study || !addon.panelController) return;
@@ -110,9 +142,15 @@ JSB.newAddon = function (mainPath) {
       hostController.view.addSubview(addon.panelController.view);
     }
     layoutPanel(addon);
+    if (typeof addon.panelController.ensureHostLoaded === "function") {
+      addon.panelController.ensureHostLoaded();
+    }
     NSTimer.scheduledTimerWithTimeInterval(0.05, false, function () {
       layoutPanel(addon);
     });
+    scheduleHostReconnect(addon, 1);
+    scheduleHostReconnect(addon, 3);
+    scheduleHostReconnect(addon, 6);
     NSUserDefaults.standardUserDefaults().setBoolForKey(
       true,
       "marginnote_agent_panel_visible",
@@ -150,13 +188,10 @@ JSB.newAddon = function (mainPath) {
 
       notebookWillOpen: function () {
         var addon = self;
-        NSTimer.scheduledTimerWithTimeInterval(0.2, false, function () {
-          if (!addon.panelController || !addon.window) return;
-          var visible = NSUserDefaults.standardUserDefaults().boolForKey(
-            "marginnote_agent_panel_visible",
-          );
-          if (visible) showAgentPanel(addon);
-        });
+        schedulePanelRestore(addon, 0.2);
+        schedulePanelRestore(addon, 0.8);
+        schedulePanelRestore(addon, 2);
+        schedulePanelRestore(addon, 4);
       },
 
       controllerWillLayoutSubviews: function (controller) {

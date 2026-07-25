@@ -1,8 +1,32 @@
+function MNAgentShowWaitingPage(controller, description) {
+  if (!controller.webView) return;
+  var html = [
+    "<!doctype html><html><head><meta charset='utf-8'>",
+    "<meta name='viewport' content='width=device-width,initial-scale=1'>",
+    "<style>body{font-family:-apple-system;padding:28px;line-height:1.6;color:#334155}",
+    "button{border:0;border-radius:10px;padding:10px 16px;background:#2563eb;color:white}</style>",
+    "</head><body><h2>正在启动 MarginNote Agent</h2>",
+    "<p>正在等待本地 Host，连接恢复后会自动重试。</p>",
+    description ? "<p style='color:#64748b'>" + String(description) + "</p>" : "",
+    "<button onclick=\"location.href='mnagent://retry'\">重试</button></body></html>",
+  ].join("");
+  controller.loadingErrorPage = true;
+  controller.webView.loadHTMLStringBaseURL(html, null);
+}
+
 function MNAgentLoadHost(controller) {
   if (!controller.webView) return;
+  controller.hostLoaded = false;
+  controller.loadingErrorPage = false;
   var url = NSURL.URLWithString(MN_AGENT_BASE_URL + "/");
   var request = NSURLRequest.requestWithURL(url);
   controller.webView.loadRequest(request);
+}
+
+function MNAgentEnsureHostLoaded(controller) {
+  if (!controller.webView) return;
+  controller.webView.delegate = controller;
+  if (!controller.hostLoaded) MNAgentLoadHost(controller);
 }
 
 var AgentPanelController = JSB.defineClass(
@@ -26,7 +50,9 @@ var AgentPanelController = JSB.defineClass(
       controller.webView.autoresizingMask = 1 << 1 | 1 << 4 | 1 << 5;
       controller.webView.delegate = controller;
       controller.view.addSubview(controller.webView);
-      MNAgentLoadHost(controller);
+      controller.hostLoaded = false;
+      controller.loadingErrorPage = false;
+      MNAgentShowWaitingPage(controller, "");
     },
 
     viewDidLayoutSubviews: function () {
@@ -41,35 +67,45 @@ var AgentPanelController = JSB.defineClass(
     },
 
     viewWillAppear: function () {
-      if (self.webView) self.webView.delegate = self;
+      MNAgentEnsureHostLoaded(self);
     },
 
     viewWillDisappear: function () {
       if (!self.webView) return;
-      self.webView.stopLoading();
       self.webView.delegate = null;
+      self.webView.stopLoading();
+    },
+
+    ensureHostLoaded: function () {
+      MNAgentEnsureHostLoaded(self);
+    },
+
+    webViewDidFinishLoad: function () {
+      if (self.loadingErrorPage) {
+        self.loadingErrorPage = false;
+        return;
+      }
+      self.hostLoaded = true;
     },
 
     webViewDidFailLoadWithError: function (webView, error) {
-      var description = error.localizedDescription;
+      var code = error && error.code;
+      if (typeof code === "function") code = code.call(error);
+      if (Number(code) === -999) return;
+
+      self.hostLoaded = false;
+      var description = error && error.localizedDescription;
       if (typeof description === "function") description = description.call(error);
-      var html = [
-        "<!doctype html><html><head><meta charset='utf-8'>",
-        "<meta name='viewport' content='width=device-width,initial-scale=1'>",
-        "<style>body{font-family:-apple-system;padding:28px;line-height:1.6;color:#334155}",
-        "button{border:0;border-radius:10px;padding:10px 16px;background:#2563eb;color:white}</style>",
-        "</head><body><h2>MarginNote Agent Host 未启动</h2>",
-        "<p>在项目目录运行 <code>npm start</code>，然后点击重试。</p>",
-        "<p style='color:#64748b'>" + String(description || "Connection failed") + "</p>",
-        "<button onclick=\"location.href='mnagent://retry'\">重试</button></body></html>",
-      ].join("");
-      webView.loadHTMLStringBaseURL(html, null);
+      MNAgentShowWaitingPage(self, description || "Connection failed");
     },
 
     webViewShouldStartLoadWithRequestNavigationType: function (webView, request) {
       var url = request.URL();
       if (!url || String(url.scheme || "").toLowerCase() !== "mnagent") return true;
-      if (String(url.host || "").toLowerCase() === "retry") MNAgentLoadHost(self);
+      if (String(url.host || "").toLowerCase() === "retry") {
+        self.hostLoaded = false;
+        MNAgentLoadHost(self);
+      }
       return false;
     },
   },

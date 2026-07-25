@@ -2,7 +2,7 @@
   "addonid": "com.marginnote.agent.host",
   "author": "MarginNote Agent",
   "title": "MarginNote Agent",
-  "version": "0.2.0",
+  "version": "0.2.4",
   "marginnote_version_min": "4.0.0",
   "cert_key": ""
 }

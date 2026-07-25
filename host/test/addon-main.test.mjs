@@ -5,6 +5,7 @@ import assert from "node:assert/strict";
 
 async function loadAddon({ study }) {
   const preferences = new Map();
+  const timers = [];
   let addonMethods = null;
   const context = vm.createContext({
     Application: {
@@ -25,13 +26,17 @@ async function loadAddon({ study }) {
         return methods;
       },
     },
-    NSTimer: { scheduledTimerWithTimeInterval: () => {} },
+    NSTimer: {
+      scheduledTimerWithTimeInterval: (delay, repeats, callback) => {
+        timers.push({ callback, delay, repeats });
+      },
+    },
     MNAgentBridge: { start: () => {}, stop: () => {} },
     AgentPanelController: { new: () => ({}) },
   });
   vm.runInContext(await readFile(new URL("../../addon/main.js", import.meta.url), "utf8"), context);
   context.JSB.newAddon("/addon");
-  return { addonMethods, context, preferences };
+  return { addonMethods, context, preferences, timers };
 }
 
 function createView(frame, bounds = frame) {
@@ -93,9 +98,18 @@ function createNativeStudy() {
 
 test("addon uses MarginNote's native extension panel without changing the study frame", async () => {
   const { hostView, study, studyView, toggleCount } = createNativeStudy();
-  const { addonMethods, context, preferences } = await loadAddon({ study });
+  const { addonMethods, context, preferences, timers } = await loadAddon({ study });
   const panelView = createPanelView();
-  const addon = { window: {}, panelController: { view: panelView } };
+  let ensureHostCount = 0;
+  const addon = {
+    window: {},
+    panelController: {
+      view: panelView,
+      ensureHostLoaded: () => {
+        ensureHostCount += 1;
+      },
+    },
+  };
   context.self = addon;
 
   addonMethods.toggleAgentPanel();
@@ -105,6 +119,11 @@ test("addon uses MarginNote's native extension panel without changing the study 
   assert.deepEqual(plainFrame(panelView.frame), { x: 0, y: 0, width: 420, height: 700 });
   assert.equal(toggleCount(), 1);
   assert.equal(preferences.get("marginnote_agent_panel_visible"), true);
+  assert.equal(ensureHostCount, 1);
+  assert.deepEqual(
+    timers.map((timer) => timer.delay),
+    [0.05, 1, 3, 6],
+  );
 
   addonMethods.toggleAgentPanel();
 
@@ -205,4 +224,29 @@ test("addon yields panel ownership after the native panel is closed externally",
   assert.equal(panelView.superview, null);
   assert.ok(hostView.window);
   assert.equal(toggleCount(), 1);
+});
+
+test("addon retries restoring a remembered panel until the study window is ready", async () => {
+  const { hostView, study } = createNativeStudy();
+  const { addonMethods, context, preferences, timers } = await loadAddon({ study });
+  const panelView = createPanelView();
+  const addon = {
+    window: null,
+    panelController: { view: panelView, ensureHostLoaded: () => {} },
+  };
+  context.self = addon;
+  preferences.set("marginnote_agent_panel_visible", true);
+
+  addonMethods.notebookWillOpen();
+  assert.deepEqual(
+    timers.map((timer) => timer.delay),
+    [0.2, 0.8, 2, 4],
+  );
+
+  timers[0].callback();
+  assert.equal(panelView.superview, null);
+
+  addon.window = {};
+  timers[1].callback();
+  assert.equal(panelView.superview, hostView);
 });

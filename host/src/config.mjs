@@ -16,6 +16,7 @@ export const DEFAULT_CONFIG = Object.freeze({
   },
   agent: {
     maxToolRounds: 12,
+    contextWindowTokens: 500_000,
     autoApprove: true,
     approvalTimeoutMs: 300_000,
     instructions:
@@ -82,6 +83,10 @@ export async function loadConfig(explicitPath = process.env.MN_AGENT_CONFIG) {
 
   if (!Number.isInteger(config.listen.port) || config.listen.port < 1 || config.listen.port > 65_535) {
     throw new Error(`Invalid listen.port: ${config.listen.port}`);
+  }
+
+  if (!Number.isInteger(config.agent.contextWindowTokens) || config.agent.contextWindowTokens < 1_000) {
+    throw new Error("Invalid agent.contextWindowTokens");
   }
 
   return { config, configPath: configPath ?? null };

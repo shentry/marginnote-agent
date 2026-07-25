@@ -10,17 +10,78 @@
     <main class="shell">
       <header class="topbar">
         <div class="topbar-main">
-          <div>
+          <button
+            id="topbarToggle"
+            class="title-row"
+            type="button"
+            aria-expanded="true"
+            title="折叠 / 展开顶栏"
+          >
             <h1>MarginNote Agent</h1>
-            <p id="statusText">正在连接 Host…</p>
-          </div>
-          <span id="statusDot" class="status-dot"></span>
-        </div>
-        <div class="conversation-controls">
-          <button id="conversationButton" class="conversation-button" type="button">
-            <span id="conversationTitle">新对话</span>
-            <span aria-hidden="true">⌄</span>
+            <span class="topbar-toggle-meta">
+              <span id="statusDot" class="status-dot" role="status" aria-label="Host 连接状态"></span>
+              <svg
+                id="topbarChevron"
+                class="topbar-chevron"
+                width="14"
+                height="14"
+                viewBox="0 0 12 12"
+                aria-hidden="true"
+              >
+                <path
+                  d="M3 4.5 6 7.5 9 4.5"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="1.5"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                />
+              </svg>
+            </span>
           </button>
+          <div id="topbarBody" class="topbar-body">
+            <p id="statusText">正在连接 Host…</p>
+        <details
+          id="contextWindow"
+          class="context-window"
+          title="按当前请求内容估算；达到上限会自动压缩历史上下文"
+        >
+          <summary class="context-window-head">
+            <span class="context-window-title">上下文窗口（估算）</span>
+            <span class="context-window-meta">
+              <strong id="contextPercent" class="context-window-percent">正在计算…</strong>
+              <svg
+                class="context-window-chevron"
+                width="12"
+                height="12"
+                viewBox="0 0 12 12"
+                aria-hidden="true"
+              >
+                <path
+                  d="M3 4.5 6 7.5 9 4.5"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="1.5"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                />
+              </svg>
+            </span>
+          </summary>
+          <div class="context-window-body">
+            <div class="context-window-bar" aria-hidden="true">
+              <span id="contextBarFill" class="context-window-bar-fill"></span>
+            </div>
+            <span id="contextUsage" class="context-window-usage">正在读取当前会话</span>
+          </div>
+        </details>
+          <div class="conversation-controls">
+            <button id="conversationButton" class="conversation-button" type="button">
+              <span id="conversationTitle">新对话</span>
+              <span aria-hidden="true">⌄</span>
+            </button>
+          </div>
+          </div>
         </div>
       </header>
 

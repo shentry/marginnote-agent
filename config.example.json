@@ -12,6 +12,7 @@
   },
   "agent": {
     "maxToolRounds": 12,
+    "contextWindowTokens": 500000,
     "autoApprove": true,
     "approvalTimeoutMs": 300000,
     "instructions": "你是 MarginNote 内的研究与学习助手。需要了解当前材料时，先调用 MarginNote 或 MCP 工具获取事实。用户询问当前 PDF 时调用 read_pdf，询问选中内容时调用 get_selection。只在完成任务所必需时调用写工具；不要删除笔记。工具失败时说明真实错误，不编造结果。"

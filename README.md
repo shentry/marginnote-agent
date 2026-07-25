@@ -36,9 +36,21 @@ npm start
 
 Host 默认监听 `http://127.0.0.1:42117`，模型服务使用 `http://143.198.115.0:18317/v1/chat/completions`。API Key 只存在于 Host 进程环境中，不会进入配置文件、`.mnaddon` 或 WebView。
 
+### 随 MarginNote 自动启停
+
+执行一次下面的命令，会安装当前 macOS 用户的 `launchd` 启动项：
+
+```bash
+npm run install:launch-agent
+```
+
+启动项会持续观察 MarginNote 4 进程：打开 MarginNote 后自动启动 Host，关闭 MarginNote 后只向它自己启动的 Host 发送 `SIGTERM`。它不会关闭占用 `42117` 的其他进程，也不会把 API Key 写入启动项；Host 仍从项目根目录的 `.env` 读取密钥。日志位于 `~/Library/Logs/MarginNote Agent/`。
+
 `agent.autoApprove` 默认为 `true`，所有工具调用会直接执行。设为 `false` 可恢复聊天面板中的逐次审批。
 
 对话默认保存在 `~/Library/Application Support/MarginNote Agent/sessions.json`，可用 `MN_AGENT_SESSION_FILE` 覆盖路径。文件权限为仅当前用户可读写；其中包含聊天内容和 Agent 已读取的工具上下文，不包含 API Key。
+
+侧栏顶部会显示按请求内容估算的上下文窗口用量。达到 `agent.contextWindowTokens`（默认 `500000`）时，Host 会自动压缩最早的完整对话轮次；可见聊天记录保留不变，压缩摘要继续作为后续模型请求的背景上下文。
 
 ## 配置 MCP
 

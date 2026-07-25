@@ -4,6 +4,10 @@ const input = document.querySelector("#messageInput");
 const sendButton = document.querySelector("#sendButton");
 const statusText = document.querySelector("#statusText");
 const statusDot = document.querySelector("#statusDot");
+const contextWindow = document.querySelector("#contextWindow");
+const contextPercent = document.querySelector("#contextPercent");
+const contextUsage = document.querySelector("#contextUsage");
+const contextBarFill = document.querySelector("#contextBarFill");
 const conversationButton = document.querySelector("#conversationButton");
 const conversationTitle = document.querySelector("#conversationTitle");
 const newConversationButton = document.querySelector("#newConversationButton");
@@ -12,6 +16,8 @@ const conversationDrawer = document.querySelector("#conversationDrawer");
 const conversationList = document.querySelector("#conversationList");
 const drawerBackdrop = document.querySelector("#drawerBackdrop");
 const scrollBottomButton = document.querySelector("#scrollBottomButton");
+const topbar = document.querySelector(".topbar");
+const topbarToggle = document.querySelector("#topbarToggle");
 const settingsMenuContainer = document.querySelector("#settingsMenuContainer");
 const settingsMenuButton = document.querySelector("#settingsMenuButton");
 const settingsMenu = document.querySelector("#settingsMenu");
@@ -239,6 +245,7 @@ function completeToolCard(message) {
 }
 
 function renderSnapshot(snapshot) {
+  renderContextWindow(snapshot.contextWindow);
   messages.replaceChildren();
   assistantNodes.clear();
   toolCards.clear();
@@ -294,6 +301,34 @@ function formatUpdatedAt(value) {
   return date.toLocaleString("zh-CN", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" });
 }
 
+function formatTokenCount(value) {
+  const tokens = Math.max(0, Number(value) || 0);
+  if (tokens < 1_000) return String(Math.round(tokens));
+  const thousands = tokens / 1_000;
+  const formatted = thousands >= 100 ? Math.round(thousands) : thousands.toFixed(thousands >= 10 ? 0 : 1);
+  return `${String(formatted).replace(/\.0$/, "")}k`;
+}
+
+function renderContextWindow(context) {
+  if (!context) {
+    contextPercent.textContent = "正在计算…";
+    contextUsage.textContent = "正在读取当前会话";
+    contextBarFill.style.width = "0%";
+    contextWindow.classList.remove("warn", "danger");
+    return;
+  }
+  const usedPercent = Math.max(0, Math.min(100, Number(context.usagePercent) || 0));
+  contextPercent.textContent = `${usedPercent}% 已用`;
+  contextUsage.textContent = `已用 ${formatTokenCount(context.usedTokens)} / 共 ${formatTokenCount(context.limitTokens)} 标记`;
+  contextBarFill.style.width = `${usedPercent}%`;
+  contextWindow.classList.toggle("warn", usedPercent >= 75 && usedPercent < 90);
+  contextWindow.classList.toggle("danger", usedPercent >= 90);
+  const compactionCount = Number(context.compactionCount) || 0;
+  contextWindow.title =
+    `按系统提示、工具定义和当前会话内容估算；达到 ${formatTokenCount(context.limitTokens)} 时自动压缩历史上下文` +
+    (compactionCount > 0 ? `；本对话已自动压缩 ${compactionCount} 次` : "");
+}
+
 function renderConversationList() {
   conversationList.replaceChildren();
   for (const session of sessions) {
@@ -316,6 +351,7 @@ function renderConversationList() {
 function updateCurrentTitle() {
   const current = sessions.find((session) => session.id === sessionId);
   conversationTitle.textContent = current?.title || "新对话";
+  renderContextWindow(current?.contextWindow);
 }
 
 async function refreshSessions() {
@@ -593,7 +629,7 @@ async function refreshStatus() {
     const mcpCount = Object.values(status.mcpServers || {}).filter(
       (server) => server.state === "connected",
     ).length;
-    statusText.textContent = `${model} · ${mn} · ${mcpCount} 个 MCP 已连接`;
+    statusText.textContent = `${model} · ${mn} · ${mcpCount} 个 MCP`;
     statusDot.classList.toggle("online", Boolean(status.ok));
   } catch (error) {
     statusText.textContent = `Host 连接失败:${error.message}`;
@@ -637,6 +673,15 @@ input.addEventListener("keydown", (event) => {
     event.preventDefault();
     composer.requestSubmit();
   }
+});
+
+function setTopbarCollapsed(collapsed) {
+  topbar.classList.toggle("collapsed", collapsed);
+  topbarToggle.setAttribute("aria-expanded", String(!collapsed));
+}
+
+topbarToggle.addEventListener("click", () => {
+  setTopbarCollapsed(!topbar.classList.contains("collapsed"));
 });
 
 conversationButton.addEventListener("click", () => {
