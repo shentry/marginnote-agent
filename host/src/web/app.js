@@ -8,6 +8,8 @@ const contextWindow = document.querySelector("#contextWindow");
 const contextPercent = document.querySelector("#contextPercent");
 const contextUsage = document.querySelector("#contextUsage");
 const contextBarFill = document.querySelector("#contextBarFill");
+const contextRingValue = document.querySelector("#contextRingValue");
+const topbarBody = document.querySelector("#topbarBody");
 const conversationButton = document.querySelector("#conversationButton");
 const conversationTitle = document.querySelector("#conversationTitle");
 const newConversationButton = document.querySelector("#newConversationButton");
@@ -244,6 +246,55 @@ function completeToolCard(message) {
   scrollToBottom();
 }
 
+// ---------- 空状态:给出可直接点用的起手式 ----------
+
+const EMPTY_STATE_PROMPTS = [
+  "总结当前文档这一章的要点",
+  "把我选中的内容整理成一条笔记",
+  "在我的笔记本里搜索相关内容",
+];
+
+function createEmptyState() {
+  const empty = document.createElement("div");
+  empty.className = "empty-state";
+
+  const mark = document.createElement("div");
+  mark.className = "empty-state-mark";
+  mark.innerHTML =
+    '<svg width="20" height="20" viewBox="0 0 20 20" aria-hidden="true">' +
+    '<path d="M4 4.6h8.2a2.4 2.4 0 0 1 2.4 2.4v8.4H6.4A2.4 2.4 0 0 1 4 13V4.6Z" ' +
+    'fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/>' +
+    '<path d="M7 8h5M7 11h3.2" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>' +
+    "</svg>";
+
+  const title = document.createElement("div");
+  title.className = "empty-state-title";
+  title.textContent = "开始新对话";
+
+  const hint = document.createElement("div");
+  hint.className = "empty-state-hint";
+  hint.textContent = "Agent 可以读取当前文档、检索你的笔记，也能调用已连接的 MCP 工具。";
+
+  const prompts = document.createElement("div");
+  prompts.className = "empty-state-prompts";
+  for (const text of EMPTY_STATE_PROMPTS) {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "empty-state-prompt";
+    button.textContent = text;
+    button.onclick = () => {
+      input.value = text;
+      autoResizeInput();
+      syncSendState();
+      input.focus();
+    };
+    prompts.append(button);
+  }
+
+  empty.append(mark, title, hint, prompts);
+  return empty;
+}
+
 function renderSnapshot(snapshot) {
   renderContextWindow(snapshot.contextWindow);
   messages.replaceChildren();
@@ -254,12 +305,7 @@ function renderSnapshot(snapshot) {
   renderedMessageIds.clear();
   thinkingNode = null;
   const list = snapshot.messages ?? [];
-  if (!list.length) {
-    const empty = document.createElement("div");
-    empty.className = "empty-state";
-    empty.textContent = "开始新对话:询问当前文档、搜索笔记,或让 Agent 调用 MCP 工具。";
-    messages.append(empty);
-  }
+  if (!list.length) messages.append(createEmptyState());
   for (const message of list) {
     if (message.role === "user") appendMessage("user", message.content, message.id);
     else if (message.role === "assistant") completeAssistantMessage(message);
@@ -276,8 +322,10 @@ function renderSnapshot(snapshot) {
 
 function setRunning(value) {
   running = value;
-  sendButton.disabled = value;
-  sendButton.textContent = value ? "思考中…" : "发送";
+  syncSendState();
+  sendButton.classList.toggle("running", value);
+  sendButton.setAttribute("aria-label", value ? "正在生成回复" : "发送");
+  sendButton.title = value ? "正在生成回复…" : "发送";
   newConversationButton.disabled = value;
   drawerNewConversationButton.disabled = value;
   if (!value) {
@@ -290,6 +338,11 @@ function setRunning(value) {
 // ---------- 对话列表抽屉 ----------
 
 function setDrawerOpen(open) {
+  // 顶栏高度随详情面板展开而变，打开时按实际位置对齐抽屉。
+  if (open) {
+    const shellTop = document.querySelector(".shell").getBoundingClientRect().top;
+    conversationDrawer.style.top = `${topbar.getBoundingClientRect().bottom - shellTop + 6}px`;
+  }
   conversationDrawer.hidden = !open;
   drawerBackdrop.hidden = !open;
   conversationButton.setAttribute("aria-expanded", String(open));
@@ -309,18 +362,30 @@ function formatTokenCount(value) {
   return `${String(formatted).replace(/\.0$/, "")}k`;
 }
 
+// 环形指示器半径 6，周长 2πr ≈ 37.7，用 dasharray 画出已用弧长。
+const CONTEXT_RING_CIRCUMFERENCE = 37.7;
+
+function renderContextRing(usedPercent) {
+  const used = (CONTEXT_RING_CIRCUMFERENCE * usedPercent) / 100;
+  contextRingValue.style.strokeDasharray = `${used.toFixed(2)} ${CONTEXT_RING_CIRCUMFERENCE}`;
+}
+
 function renderContextWindow(context) {
   if (!context) {
-    contextPercent.textContent = "正在计算…";
+    contextPercent.textContent = "--";
     contextUsage.textContent = "正在读取当前会话";
     contextBarFill.style.width = "0%";
+    renderContextRing(0);
     contextWindow.classList.remove("warn", "danger");
     return;
   }
   const usedPercent = Math.max(0, Math.min(100, Number(context.usagePercent) || 0));
-  contextPercent.textContent = `${usedPercent}% 已用`;
-  contextUsage.textContent = `已用 ${formatTokenCount(context.usedTokens)} / 共 ${formatTokenCount(context.limitTokens)} 标记`;
+  contextPercent.textContent = `${usedPercent}%`;
+  contextUsage.textContent =
+    `上下文已用 ${formatTokenCount(context.usedTokens)}` +
+    ` / 共 ${formatTokenCount(context.limitTokens)} 标记`;
   contextBarFill.style.width = `${usedPercent}%`;
+  renderContextRing(usedPercent);
   contextWindow.classList.toggle("warn", usedPercent >= 75 && usedPercent < 90);
   contextWindow.classList.toggle("danger", usedPercent >= 90);
   const compactionCount = Number(context.compactionCount) || 0;
@@ -644,7 +709,15 @@ function autoResizeInput() {
   input.style.height = `${Math.min(input.scrollHeight, 160)}px`;
 }
 
-input.addEventListener("input", autoResizeInput);
+// 空输入时禁用发送，避免出现按了没反应的按钮
+function syncSendState() {
+  sendButton.disabled = running || !input.value.trim();
+}
+
+input.addEventListener("input", () => {
+  autoResizeInput();
+  syncSendState();
+});
 
 composer.addEventListener("submit", async (event) => {
   event.preventDefault();
@@ -663,6 +736,7 @@ composer.addEventListener("submit", async (event) => {
     setRunning(false);
     input.value = content;
     autoResizeInput();
+    syncSendState();
     input.focus();
     showError(error);
   }
@@ -675,13 +749,14 @@ input.addEventListener("keydown", (event) => {
   }
 });
 
-function setTopbarCollapsed(collapsed) {
-  topbar.classList.toggle("collapsed", collapsed);
-  topbarToggle.setAttribute("aria-expanded", String(!collapsed));
+function setTopbarDetailOpen(open) {
+  topbarBody.hidden = !open;
+  topbarToggle.setAttribute("aria-expanded", String(open));
 }
 
 topbarToggle.addEventListener("click", () => {
-  setTopbarCollapsed(!topbar.classList.contains("collapsed"));
+  setTopbarDetailOpen(topbarBody.hidden);
+  setDrawerOpen(false);
 });
 
 conversationButton.addEventListener("click", () => {
